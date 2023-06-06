@@ -6,9 +6,9 @@ import torch
 from torch import nn
 from torchvision.ops import RoIPool
 
-from detectron2.layers import ROIAlign, ROIAlignRotated, cat
+from detectron2.layers import ROIAlign, ROIAlignRotated, cat, nonzero_tuple
 from detectron2.modeling.poolers import (
-        convert_boxes_to_pooler_format, assign_boxes_to_levels
+        convert_boxes_to_pooler_format, assign_boxes_to_levels, _create_zeros
 )
 
 def _img_area(instance):
@@ -16,7 +16,7 @@ def _img_area(instance):
     device = instance.pred_classes.device
     image_size = instance.image_size
     area = torch.as_tensor(image_size[0] * image_size[1], dtype=torch.float, device=device)
-    tmp = torch.zeros((len(instance.pred_classes), 1), dtype=torch.float, device=device)
+    tmp = torch.zeros((instance.pred_classes.shape[0], 1), dtype=torch.float, device=device)
 
     return (area + tmp).squeeze(1)
 
@@ -93,7 +93,7 @@ def assign_boxes_to_levels(box_lists, min_level, max_level, canonical_box_size, 
     return level_assignments.to(torch.int64) - min_level
 
 
-def convert_boxes_to_pooler_format(box_lists):
+# def convert_boxes_to_pooler_format(box_lists):
     """
     Convert all boxes in `box_lists` to the low-level format used by ROI pooling ops
     (see description under Returns).
@@ -117,17 +117,17 @@ def convert_boxes_to_pooler_format(box_lists):
             rotated box (x_ctr, y_ctr, width, height, angle_degrees) comes from.
     """
 
-    def fmt_box_list(box_tensor, batch_index):
-        repeated_index = torch.full(
-            (len(box_tensor), 1), batch_index, dtype=box_tensor.dtype, device=box_tensor.device
-        )
-        return cat((repeated_index, box_tensor), dim=1)
-
-    pooler_fmt_boxes = cat(
-        [fmt_box_list(box_list.tensor, i) for i, box_list in enumerate(box_lists)], dim=0
-    )
-
-    return pooler_fmt_boxes
+#    def fmt_box_list(box_tensor, batch_index):
+#        repeated_index = torch.full(
+#            (len(box_tensor), 1), batch_index, dtype=box_tensor.dtype, device=box_tensor.device
+#        )
+#        return cat((repeated_index, box_tensor), dim=1)
+#
+#    pooler_fmt_boxes = cat(
+#        [fmt_box_list(box_list.tensor, i) for i, box_list in enumerate(box_lists)], dim=0
+#    )
+#
+#    return pooler_fmt_boxes
 
 
 class ROIPooler(nn.Module):
@@ -283,14 +283,25 @@ class ROIPooler(nn.Module):
         num_channels = x[0].shape[1]
         output_size = self.output_size[0]
 
+        """
         dtype, device = x[0].dtype, x[0].device
         output = torch.zeros(
             (num_boxes, num_channels, output_size, output_size), dtype=dtype, device=device
         )
-
         for level, (x_level, pooler) in enumerate(zip(x, self.level_poolers)):
             inds = torch.nonzero(level_assignments == level).squeeze(1)
             pooler_fmt_boxes_level = pooler_fmt_boxes[inds]
             output[inds] = pooler(x_level, pooler_fmt_boxes_level)
+        """
+        # output = cat([self.level_poolers[b_level](x[b_level], box[None, :]) for b_level, box in zip(level_assignments, pooler_fmt_boxes)])
+
+        # feat = [ pooler(x_level, pooler_fmt_boxes) for (x_level, pooler) in zip(x, self.level_poolers)]
+        # output = cat([feat[b_level][i][None,:] for i, b_level in enumerate(level_assignments)])
+        output = _create_zeros(pooler_fmt_boxes, num_channels, output_size, output_size, x[0])
+        for level, pooler in enumerate(self.level_poolers):
+            inds = nonzero_tuple(level_assignments == level)[0]
+            pooler_fmt_boxes_level = pooler_fmt_boxes[inds]
+            # Use index_put_ instead of advance indexing, to avoid pytorch/issues/49852
+            output.index_put_((inds,), pooler(x[level], pooler_fmt_boxes_level))
 
         return output

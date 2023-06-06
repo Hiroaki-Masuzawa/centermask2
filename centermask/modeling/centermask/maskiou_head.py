@@ -51,7 +51,8 @@ def mask_iou_inference(pred_instances, pred_maskiou):
     labels = cat([i.pred_classes for i in pred_instances])
     num_masks = pred_maskiou.shape[0]
     index = torch.arange(num_masks, device=labels.device)
-    num_boxes_per_image = [len(i) for i in pred_instances]
+    # num_boxes_per_image = [len(i) for i in pred_instances]
+    num_boxes_per_image = [i.pred_classes.shape[0] for i in pred_instances]
     maskious = pred_maskiou[index, labels].split(num_boxes_per_image, dim=0)
     for maskiou, box in zip(maskious, pred_instances):
         box.mask_scores = box.scores * maskiou

@@ -205,7 +205,7 @@ def mask_rcnn_inference(pred_mask_logits, pred_instances):
         mask_probs_pred = pred_mask_logits[indices, class_pred][:, None].sigmoid()
     # mask_probs_pred.shape: (B, 1, Hmask, Wmask)
 
-    num_boxes_per_image = [len(i) for i in pred_instances]
+    num_boxes_per_image = [i.pred_classes.shape[0] for i in pred_instances]
     mask_probs_pred = mask_probs_pred.split(num_boxes_per_image, dim=0)
 
     for prob, instances in zip(mask_probs_pred, pred_instances):
