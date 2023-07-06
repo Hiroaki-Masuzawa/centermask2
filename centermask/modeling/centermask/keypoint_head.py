@@ -4,10 +4,13 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from detectron2.layers import Conv2d, ConvTranspose2d, ShapeSpec, cat, interpolate
+from detectron2.layers import Conv2d, ConvTranspose2d, ShapeSpec, cat, interpolate, get_norm
 from detectron2.structures import Instances, heatmaps_to_keypoints
 from detectron2.utils.events import get_event_storage
 from detectron2.utils.registry import Registry
+
+from .sam import SpatialAttention
+import fvcore.nn.weight_init as weight_init
 
 _TOTAL_SKIPPED = 0
 
@@ -222,3 +225,69 @@ class KRCNNConvDeconvUpsampleHead(BaseKeypointRCNNHead):
         x = self.score_lowres(x)
         x = interpolate(x, scale_factor=self.up_scale, mode="bilinear", align_corners=False)
         return x
+
+@ROI_KEYPOINT_HEAD_REGISTRY.register()
+class SpatialAttentionKeypointHead(BaseKeypointRCNNHead):
+    """
+    A keypoint head with several conv layers and spatial attention module 
+    in CenterMask paper, plus an upsample layer (with `ConvTranspose2d`).
+    """
+
+    def __init__(self, cfg, input_shape: ShapeSpec):
+        """
+        The following attributes are parsed from config:
+            num_conv: the number of conv layers
+            conv_dim: the dimension of the conv layers
+            norm: normalization for the conv layers
+        """
+        super().__init__(cfg, input_shape)
+
+        # fmt: off
+        conv_dims         = cfg.MODEL.ROI_KEYPOINT_HEAD.CONV_DIMS
+        self.norm         = cfg.MODEL.ROI_KEYPOINT_HEAD.NORM
+        input_channels    = input_shape.channels
+        num_keypoints = cfg.MODEL.ROI_KEYPOINT_HEAD.NUM_KEYPOINTS
+        # fmt: on
+
+        self.conv_norm_relus = []
+
+        for k, conv_dim in enumerate(conv_dims):
+            conv = Conv2d(
+                input_channels if k == 0 else last_ch,
+                conv_dim,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=not self.norm,
+                norm=get_norm(self.norm, conv_dim),
+                activation=F.relu,
+            )
+            self.add_module("mask_fcn{}".format(k + 1), conv)
+            self.conv_norm_relus.append(conv)
+            last_ch = conv_dim
+
+        self.spatialAtt = SpatialAttention()
+
+        self.deconv = ConvTranspose2d(
+            last_ch if len(conv_dims) > 0 else input_channels,
+            last_ch,
+            kernel_size=2,
+            stride=2,
+            padding=0,
+        )
+
+        self.predictor = Conv2d(last_ch, num_keypoints, kernel_size=1, stride=1, padding=0)
+
+        for layer in self.conv_norm_relus + [self.deconv]:
+            weight_init.c2_msra_fill(layer)
+        # use normal distribution initialization for mask prediction layer
+        nn.init.normal_(self.predictor.weight, std=0.001)
+        if self.predictor.bias is not None:
+            nn.init.constant_(self.predictor.bias, 0)
+
+    def layers(self, x):
+        for layer in self.conv_norm_relus:
+            x = layer(x)
+        x = self.spatialAtt(x)
+        x = F.relu(self.deconv(x))
+        return self.predictor(x)

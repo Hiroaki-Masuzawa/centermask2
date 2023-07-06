@@ -18,7 +18,14 @@ def _img_area(instance):
     area = torch.as_tensor(image_size[0] * image_size[1], dtype=torch.float, device=device)
     tmp = torch.zeros((instance.pred_classes.shape[0], 1), dtype=torch.float, device=device)
 
-    return (area + tmp).squeeze(1)
+    # return (area + tmp).squeeze(1)
+    work1 = (area + tmp).squeeze(1)
+    tmp = torch.ones((instance.pred_classes.shape[0]), dtype=torch.float, device=device)
+    work2 = area * tmp 
+    if not (work1==work2).all():
+        print(work1, work2)
+    return area * tmp
+
 
 
 def assign_boxes_to_levels_by_ratio(instances, min_level, max_level, is_train=False):

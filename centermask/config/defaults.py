@@ -82,5 +82,6 @@ _C.MODEL.ROI_MASKIOU_HEAD.NUM_CONV = 4
 # ---------------------------------------------------------------------------- #
 # Keypoint Head
 # ---------------------------------------------------------------------------- #
-_C.MODEL.ROI_KEYPOINT_HEAD.IN_FEATURES = ["p2", "p3", "p4", "p5"]
+_C.MODEL.ROI_KEYPOINT_HEAD.IN_FEATURES = ["p3", "p4", "p5"]
 _C.MODEL.ROI_KEYPOINT_HEAD.ASSIGN_CRITERION = "ratio"
+_C.MODEL.ROI_KEYPOINT_HEAD.NORM = ""
