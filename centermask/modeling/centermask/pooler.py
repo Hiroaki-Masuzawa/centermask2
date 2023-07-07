@@ -16,14 +16,14 @@ def _img_area(instance):
     device = instance.pred_classes.device
     image_size = instance.image_size
     area = torch.as_tensor(image_size[0] * image_size[1], dtype=torch.float, device=device)
+    # To avoid adding IFnode when converting to ONNX model, we change the code. (Result is same.)
+    """
     tmp = torch.zeros((instance.pred_classes.shape[0], 1), dtype=torch.float, device=device)
 
-    # return (area + tmp).squeeze(1)
-    work1 = (area + tmp).squeeze(1)
+    return (area + tmp).squeeze(1)
+    """
     tmp = torch.ones((instance.pred_classes.shape[0]), dtype=torch.float, device=device)
-    work2 = area * tmp 
-    if not (work1==work2).all():
-        print(work1, work2)
+    
     return area * tmp
 
 

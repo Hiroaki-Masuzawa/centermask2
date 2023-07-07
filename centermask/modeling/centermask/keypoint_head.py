@@ -277,6 +277,7 @@ class SpatialAttentionKeypointHead(BaseKeypointRCNNHead):
         )
 
         self.predictor = Conv2d(last_ch, num_keypoints, kernel_size=1, stride=1, padding=0)
+        self.up_scale = 2
 
         for layer in self.conv_norm_relus + [self.deconv]:
             weight_init.c2_msra_fill(layer)
@@ -290,4 +291,6 @@ class SpatialAttentionKeypointHead(BaseKeypointRCNNHead):
             x = layer(x)
         x = self.spatialAtt(x)
         x = F.relu(self.deconv(x))
-        return self.predictor(x)
+        x = self.predictor(x)
+        x = interpolate(x, scale_factor=self.up_scale, mode="bilinear", align_corners=False)
+        return x
